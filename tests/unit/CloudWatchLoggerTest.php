@@ -7,7 +7,7 @@ use Aws\CloudWatchLogs\Exception\CloudWatchLogsException;
 
 /**
  * Tests for CloudWatchLogger class
- * 
+ *
  * @covers \LegalThings\CloudWatchLogger
  */
 class CloudWatchLoggerTest extends Test
@@ -28,46 +28,47 @@ class CloudWatchLoggerTest extends Test
             'options' => [
                 'retention_days' => 90,
                 'error_max_retry' => 3,
-                'error_retry_delay' => 0
+                'error_retry_delay' => 0,
+                'already_encoded_events' => false,
             ]
         ];
     }
-    
-    
+
+
     public function testConstruct()
     {
         $config = $this->getConfig();
-        
+
         $logger = new CloudWatchLogger($config);
-        
+
         $expected = (object)$config;
         $expected->options = (object)$expected->options;
         $this->assertEquals($expected, $logger->config);
-        
+
         $this->assertInstanceOf(CloudWatchClient::class, $logger->client);
     }
-    
-    
+
+
     public function testLog()
     {
         $config = $this->getConfig();
         $data = ['foo' => 'bar', 'number' => 10, 'flagged' => false];
-        
+
         $client = $this->getMockBuilder(CloudWatchClient::class)
             ->disableOriginalConstructor()->setMethods(['log'])->getMock();
-        
+
         $client->expects($this->once())->method('log')->with(
             $data,
             $config['group_name'],
             $config['stream_name'],
             (object)$config['options']
         );
-        
+
         $logger = new CloudWatchLogger($config, $client);
-        
+
         $logger->log($data);
     }
-    
+
     /**
      * @expectedException Aws\CloudWatchLogs\Exception\CloudWatchLogsException
      */
@@ -75,17 +76,17 @@ class CloudWatchLoggerTest extends Test
     {
         $config = $this->getConfig();
         $data = ['foo' => 'bar', 'number' => 10, 'flagged' => false];
-        
+
         $exception = $this->getMockBuilder(CloudWatchLogsException::class)
             ->disableOriginalConstructor()->setMethods(['getAwsErrorCode'])->getMock();
         $exception->expects($this->exactly(4))->method('getAwsErrorCode')->willReturn('InvalidSequenceTokenException');
-        
+
         $client = $this->getMockBuilder(CloudWatchClient::class)
             ->disableOriginalConstructor()->setMethods(['log'])->getMock();
         $client->expects($this->exactly(4))->method('log')->willThrowException($exception);
-        
+
         $logger = new CloudWatchLogger($config, $client);
-        
+
         $logger->log($data);
     }
 }

@@ -13,48 +13,48 @@ class CloudWatchClient
      * @var object
      */
     public $config;
-    
+
     /**
      * @var Client
      */
     public $client;
-    
+
     /**
      * @var string
      */
     protected $sequence_token;
-    
-    
+
+
     /**
      * Class constructor
-     * 
+     *
      * @param object|array $config
      * @param Client       $client
      */
     public function __construct($config, $client = null)
     {
         $this->config = (object)$config;
-        
+
         $this->client = $client ?: $this->create($this->config);
     }
-    
+
     /**
      * Create a client
-     * 
+     *
      * @param object $config
-     * 
+     *
      * @return Logger $logger
      */
     protected function create($config)
     {
         $this->validateConfig($config);
-        
+
         return new Client((array)$config->aws);
     }
-    
+
     /**
      * Validate config
-     * 
+     *
      * @param object $config
      */
     protected function validateConfig($config)
@@ -63,18 +63,18 @@ class CloudWatchClient
             throw new InvalidArgumentException("CloudWatchClient config 'aws' not given");
         }
     }
-    
-    
+
+
     /**
      * Log data in CloudWatch
      * Will automatically create missing groups and streams as needed
      * This is the recommended function to log data as it keeps track of sequence tokens
-     * 
+     *
      * @param string|array|object $data
      * @param string              $group
      * @param string              $stream
-     * @param array|object        $options ['retention_days' => 90]
-     * 
+     * @param array|object        $options ['retention_days' => 90, 'already_encoded_events' => false]
+     *
      * @return Result
      */
     public function log($data, $group, $stream, $options = null)
@@ -85,16 +85,22 @@ class CloudWatchClient
                 $this->sequence_token = $created['stream']['uploadSequenceToken'];
             }
         }
-        
-        $message = $data;
-        
-        if (is_array($data) || is_object($data)) {
-            // can only log strings to CloudWatch
-            $message = json_encode((array)$data);
+
+        $alreadyEncodedEvents = isset($options) && isset($options->already_encoded_events) ? $options->already_encoded_events : false;
+
+        if ($alreadyEncodedEvents && is_array($data) && isset($data[0]['message']) && isset($data[0]['timestamp'])) {
+            $events = $data;
+        }else{
+            $message = $data;
+
+            if (is_array($data) || is_object($data)) {
+                // can only log strings to CloudWatch
+                $message = json_encode((array)$data);
+            }
+
+            $events = [['message' => $message, 'timestamp' => time() * 1000]];
         }
-        
-        $events = [['message' => $message, 'timestamp' => time() * 1000]];
-        
+
         try {
             $result = $this->putLogEvents($events, $group, $stream, $this->sequence_token);
         } catch (CloudWatchLogsException $e) {
@@ -102,25 +108,25 @@ class CloudWatchClient
             $this->sequence_token = null;
             throw $e;
         }
-        
+
         $this->sequence_token = $result->get('nextSequenceToken');
-        
+
         return $result;
     }
-    
+
     /**
      * Create group and stream if they didn't exist yet
-     * 
+     *
      * @param string              $group
      * @param string              $stream
-     * @param object              $options ['retention_days' => 90]
-     * 
+     * @param object              $options ['retention_days' => 90, 'already_encoded_events' => false]
+     *
      * @return array              ['stream' => array|null, 'group' => array|null]
      */
     protected function createGroupAndStream($group, $stream, $options = null)
-    {       
+    {
         $existingGroup = $this->getLogGroup($group);
-        
+
         if (!isset($existingGroup)) {
             $this->createLogGroup($group);
 
@@ -138,16 +144,16 @@ class CloudWatchClient
             'stream' => $existingStream
         ];
     }
-    
-    
+
+
     /**
      * Put log events
-     * 
+     *
      * @param array  $events
      * @param string $group
      * @param string $stream
      * @param string sequenceToken  Omit if the stream does not exist yet
-     * 
+     *
      * @return Result
      */
     public function putLogEvents($events, $group, $stream, $sequenceToken = null)
@@ -157,32 +163,32 @@ class CloudWatchClient
             'logGroupName' => $group,
             'logStreamName' => $stream
         ];
-        
+
         if (isset($sequenceToken)) {
             $data['sequenceToken'] = $sequenceToken;
         }
-        
+
         return $this->client->putLogEvents($data);
     }
-    
-    
+
+
     /**
      * Create log group
-     * 
+     *
      * @param string $group
-     * 
+     *
      * return Result
      */
     public function createLogGroup($group)
     {
         return $this->client->createLogGroup(['logGroupName' => $group]);
     }
-    
+
     /**
      * Get log group information
-     * 
+     *
      * @param string $group
-     * 
+     *
      * @return array|null
      */
     public function getLogGroup($group)
@@ -190,23 +196,23 @@ class CloudWatchClient
         $groups = $this->client->describeLogGroups([
             'logGroupNamePrefix' => $group
         ])->get('logGroups');
-        
+
         foreach ($groups as $data) {
             if ($data['logGroupName'] !== $group) {
                 continue;
             }
-            
+
             return $data;
         }
     }
-    
-    
+
+
     /**
      * Put retention policy
-     * 
+     *
      * @param string   $group
      * @param int|null $retention  Omit for indefinitely
-     * 
+     *
      * return Result
      */
     public function putRetentionPolicy($group, $retention = null)
@@ -216,14 +222,14 @@ class CloudWatchClient
             'retentionInDays' => $retention
         ]);
     }
-    
-    
+
+
     /**
      * Create stream
-     * 
+     *
      * @param string $group
      * @param string $stream
-     * 
+     *
      * return Result
      */
     public function createStream($group, $stream)
@@ -233,13 +239,13 @@ class CloudWatchClient
             'logStreamName' => $stream
         ]);
     }
-    
+
     /**
      * Get stream information
-     * 
+     *
      * @param string $group
      * @param string $stream
-     * 
+     *
      * @return array|null
      */
     public function getLogStream($group, $stream)
@@ -248,12 +254,12 @@ class CloudWatchClient
             'logGroupName' => $group,
             'logStreamNamePrefix' => $stream
         ])->get('logStreams');
-        
+
         foreach ($streams as $data) {
             if ($data['logStreamName'] !== $stream) {
                 continue;
             }
-            
+
             return $data;
         }
     }

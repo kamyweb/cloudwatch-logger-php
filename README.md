@@ -87,7 +87,10 @@ $logger->log(['hello' => 'world']);
         'error_max_retry' => 3,
 
         // delay to wait for before retrying logging in microseconds, defaults to 100000 microseconds (0.1 seconds)
-        'error_retry_delay' => 0
+        'error_retry_delay' => 0,
+        
+        // true if events are already aws-cloudwatch encoding array of objects [['message' => json_encode($obj), 'timestamp' => time() * 1000] , ...]
+        'already_encoded_events' => false
     ]
 ]
 ```
